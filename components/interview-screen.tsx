@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useEffect, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { LiveAudioWaveform } from "@/components/live-audio-waveform";
@@ -11,6 +11,7 @@ import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 import { buildAnswerFeedback, compileFinalReport, scoreAnswer } from "@/lib/interview-engine";
 import { getInterviewSession, getSetupSession, saveFinalReport, saveInterviewSession } from "@/lib/session";
 import type { InterviewModelEvaluation, InterviewSession, InterviewTurn, SetupSession } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 function getFirstName(fullName: string) {
   const cleaned = fullName.replace(/[^a-zA-Z\s'-]/g, " ").trim();
@@ -27,9 +28,9 @@ export function InterviewScreen() {
   const [setup, setSetup] = useState<SetupSession | null>(null);
   const [interview, setInterview] = useState<InterviewSession | null>(null);
   const [draftAnswer, setDraftAnswer] = useState("");
+  const draftAnswerRef = useRef("");
   const [status, setStatus] = useState("Loading interview...");
   const [error, setError] = useState("");
-  const [followUpPreview, setFollowUpPreview] = useState("");
   const [pendingAdvance, setPendingAdvance] = useState(false);
   const [spokenQuestionId, setSpokenQuestionId] = useState("");
   const [openingDelivered, setOpeningDelivered] = useState(false);
@@ -55,13 +56,18 @@ export function InterviewScreen() {
     ? `Question ${Math.min(interview.currentQuestionIndex + 1, interview.targetQuestionCount)} of ${interview.targetQuestionCount}`
     : "Interview";
   const interviewContext = setup?.context ?? {
+    candidateName: setup?.resume.name || "there",
     role: setup?.job.roleTitle || "Target Role",
     seniority: "mid-level",
     interviewType: "mixed behavioral and role-fit",
     resumeProjectSummary: setup?.resume.rawText.slice(0, 600) || "",
   };
-  const candidateFirstName = getFirstName(setup?.resume.name ?? "");
-  const openingGreeting = `Hi ${candidateFirstName}, it's nice to meet you. I'm Mark and I'll be interviewing you today. Take a breath, stay comfortable, and answer as clearly as you can.`;
+  const candidateFirstName = getFirstName(setup?.context.candidateName ?? setup?.resume.name ?? "");
+  const interviewRole = setup?.context.role || setup?.job.roleTitle || "this role";
+  const interviewCompany = setup?.context.companyName || setup?.job.companyName || "";
+  const openingGreeting = interviewCompany && interviewCompany !== "the company"
+    ? `Hi ${candidateFirstName}, it's nice to meet you. I'm Mark and I'll be interviewing you today for the ${interviewRole} position at ${interviewCompany}. Take a breath, stay comfortable, and answer as clearly as you can.`
+    : `Hi ${candidateFirstName}, it's nice to meet you. I'm Mark and I'll be interviewing you today for the ${interviewRole} position. Take a breath, stay comfortable, and answer as clearly as you can.`;
   const ttsMode = "browser";
   const {
     supported: ttsSupported,
@@ -83,7 +89,11 @@ export function InterviewScreen() {
     stop,
     reset,
   } = useSpeechRecognition((text) => {
-    setDraftAnswer((current) => `${current} ${text}`.trim());
+    setDraftAnswer((current) => {
+      const next = `${current} ${text}`.trim();
+      draftAnswerRef.current = next;
+      return next;
+    });
   });
 
   useEffect(() => {
@@ -220,7 +230,7 @@ export function InterviewScreen() {
       pendingFollowUpReason: undefined,
     });
     setDraftAnswer("");
-    setFollowUpPreview("");
+    draftAnswerRef.current = "";
     setPendingAdvance(false);
     reset();
   }
@@ -249,11 +259,9 @@ export function InterviewScreen() {
     };
 
     updateInterview(nextInterview);
-    setFollowUpPreview(modelResponse.follow_up_question);
     setPendingAdvance(true);
     stop();
     reset();
-    speak(modelResponse.follow_up_question);
 
     if (completed) {
       const report = compileFinalReport(nextTurns, setup.resume, setup.job, setup.companySummary);
@@ -266,14 +274,25 @@ export function InterviewScreen() {
     }
   }
 
+  async function handleSpeakToggle() {
+    if (listening) {
+      stop();
+      // Wait briefly for any final speech recognition results to flush into the ref
+      await new Promise<void>((resolve) => setTimeout(resolve, 200));
+      void handleSubmitAnswer();
+    } else {
+      void handleStartRecording();
+    }
+  }
+
   async function handleSubmitAnswer() {
     if (!setup || !interview || !currentQuestion) {
       return;
     }
 
-    const answer = draftAnswer.trim();
+    const answer = draftAnswerRef.current.trim() || draftAnswer.trim();
     if (!answer) {
-      setError("Record your answer before continuing.");
+      setError("No answer was recorded. Tap Speak and say your answer.");
       return;
     }
 
@@ -288,6 +307,8 @@ export function InterviewScreen() {
         },
         body: JSON.stringify({
           state: {
+            candidateName: setup.context?.candidateName || setup.resume.name || "",
+            companyName: setup.job.companyName || "",
             role: interviewContext.role,
             seniority: interviewContext.seniority,
             interviewType: interviewContext.interviewType,
@@ -394,6 +415,7 @@ export function InterviewScreen() {
         badge="RoleReady"
         title="Interview session not found."
         subtitle="Set up a session first so the app can tailor the questions and report."
+        current="interview"
       >
         <div className="panel p-6">
           <p className="text-sm text-slate">{status}</p>
@@ -407,184 +429,102 @@ export function InterviewScreen() {
 
   return (
     <main className="min-h-screen bg-transparent px-4 py-6 sm:px-6 lg:px-10">
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-3xl">
         <SiteHeader current="interview" />
 
-        <div className="mt-6 text-center">
-          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate">Interview in Progress</p>
-          <h1 className="mt-3 font-display text-4xl text-ink sm:text-5xl">{progressLabel}</h1>
-        </div>
-
-        <div className="mx-auto mt-10 max-w-5xl">
-          <section className="relative overflow-hidden rounded-[40px] border border-white/70 bg-[linear-gradient(120deg,rgba(212,255,215,0.92)_0%,rgba(195,232,247,0.96)_48%,rgba(159,181,255,0.92)_100%)] px-6 py-8 shadow-[0_35px_80px_-35px_rgba(74,103,168,0.45)] sm:px-8 sm:py-10">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.34),transparent_35%)]" />
-            <div className="relative">
-              <div className="flex items-start justify-between gap-4">
-                <p className="pt-4 text-sm font-semibold uppercase tracking-[0.18em] text-ink/80">
-                  Question {interview.currentQuestionIndex + 1}
-                </p>
-                <LiveAudioWaveform
-                  tone="coach"
-                  active={speaking}
-                  mediaElement={activeAudioElement}
-                  activityLevel={browserSpeechLevel}
-                  className="mt-1 flex-1"
-                />
-                <div className="hidden min-w-[110px] text-right text-xs text-ink/70 sm:block">
-                  <p>{setup.coachVoice} coach</p>
-                  <p>{selectedVoiceName || "system voice"}</p>
-                  <p className="mt-1 uppercase tracking-[0.16em] text-[10px]">{provider === "elevenlabs" ? "ElevenLabs" : "Browser"}</p>
-                </div>
-              </div>
-
-              {interview.currentQuestionIndex === 0 && interview.turns.length === 0 ? (
-                <p className="mx-auto mt-8 max-w-3xl text-center text-sm leading-7 text-ink/85">{openingGreeting}</p>
-              ) : null}
-
-              <div className="mx-auto mt-10 max-w-4xl text-center">
-                <h2 className="text-3xl font-semibold leading-[1.35] text-ink sm:text-4xl">
-                  {currentQuestion.prompt}
-                </h2>
-              </div>
-
-              <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                <div className="max-w-2xl">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/75">
-                    {followUpPreview ? "Coach follow-up" : "Coach tip"}
-                  </p>
-                  <p className="mt-2 text-base leading-7 text-ink/85">
-                    {followUpPreview
-                      ? followUpPreview
-                      : currentQuestion.focus}
-                  </p>
-                </div>
-                <div className="min-w-[180px] rounded-full bg-white/70 px-4 py-3 text-center text-sm font-semibold text-ink shadow-sm">
-                  {speaking
-                    ? "Coach is speaking"
-                    : ttsSupported && !ttsReady
-                      ? "Loading voice..."
-                      : "Your turn next"}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="mt-6 rounded-[32px] border border-white/70 bg-white/80 p-6 shadow-panel backdrop-blur">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <p className="text-lg font-semibold text-ink">Your response</p>
-                <p className="mt-1 text-sm text-slate">
-                  Use microphone controls only. Your transcript is captured in the background and shown on the results screen.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  className="button-primary"
-                  onClick={() => {
-                    void handleStartRecording();
-                  }}
-                  disabled={!sttSupported || listening || pendingAdvance || evaluating}
-                >
-                  {listening ? "Recording..." : "Start recording"}
-                </button>
-                <button type="button" className="button-secondary" onClick={handleStopRecording} disabled={!listening || evaluating}>
-                  Stop
-                </button>
-                <button type="button" className="button-secondary" onClick={handleReplayQuestion} disabled={speaking || evaluating}>
-                  Replay
-                </button>
-                <button type="button" className="button-secondary" onClick={handleSkipQuestion} disabled={pendingAdvance || evaluating}>
-                  Skip
-                </button>
-              </div>
+        {/* Question card */}
+        <section className="animate-entrance relative mt-8 min-h-[260px] overflow-hidden rounded-[40px] border border-white/70 bg-[linear-gradient(120deg,rgba(212,255,215,0.92)_0%,rgba(195,232,247,0.96)_48%,rgba(159,181,255,0.92)_100%)] px-6 py-8 shadow-[0_35px_80px_-35px_rgba(74,103,168,0.45)] sm:px-10 sm:py-10">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.34),transparent_35%)]" />
+          <div className="relative">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-ink/60">
+                {progressLabel}
+              </p>
+              <LiveAudioWaveform
+                tone="coach"
+                active={speaking}
+                mediaElement={activeAudioElement}
+                activityLevel={browserSpeechLevel}
+                className="w-24"
+              />
             </div>
 
-            <div className="mt-5 rounded-[24px] border border-ink/10 bg-white px-5 py-4">
-              <div className="flex items-center justify-between gap-4">
-                <p className="text-sm font-medium text-ink">
-                  {listening
-                    ? "Recording your answer..."
-                    : evaluating
-                      ? "Coach is evaluating your answer..."
-                    : pendingAdvance
-                      ? "Answer submitted. Review the follow-up, then continue."
-                      : draftAnswer
-                        ? "Answer captured. Submit when you're ready."
-                        : "No recorded answer yet."}
-                </p>
-                <span className="rounded-full bg-[#EEF7F5] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-pine">
-                  {draftAnswer ? `${draftAnswer.split(/\s+/).filter(Boolean).length} words captured` : "waiting"}
-                </span>
-              </div>
-            </div>
-
-            {error ? (
-              <div className="mt-4 rounded-[22px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            {interview.currentQuestionIndex === 0 && interview.turns.length === 0 ? (
+              <p className="mt-6 text-sm leading-7 text-ink/70">{openingGreeting}</p>
             ) : null}
 
-            {voiceError ? (
-              <div className="mt-4 rounded-[22px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                {voiceError}
-              </div>
-            ) : null}
-
-            <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate">
-              <span className="rounded-full bg-[#FBF7F1] px-4 py-2">{sttSupported ? "Microphone enabled" : "Microphone not available"}</span>
-              <span className="rounded-full bg-[#EEF7F5] px-4 py-2">
-                {provider === "elevenlabs"
-                  ? selectedVoiceName
-                    ? `Voice: ${selectedVoiceName}`
-                    : "Voice: ElevenLabs"
-                  : selectedVoiceName
-                    ? `Voice: ${selectedVoiceName}`
-                    : "Voice: browser"}
-              </span>
-              <span className="rounded-full bg-white px-4 py-2">
-                Engine: {provider === "elevenlabs" ? "ElevenLabs" : "Browser voice"}
-              </span>
-            </div>
-          </section>
-
-          <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
-            <div className="rounded-[30px] bg-white/70 px-6 py-5 shadow-panel backdrop-blur">
-              <div className="flex flex-col items-center justify-center gap-2 text-center">
-                <p className="text-lg font-medium text-ink">
-                  {listening ? "Listening now" : pendingAdvance ? "Coach follow-up ready" : "Your turn to answer"}
-                </p>
-                <LiveAudioWaveform
-                  tone="candidate"
-                  active={listening}
-                  mediaStream={userMicStream}
-                  className="w-full max-w-[320px]"
-                />
-                <p className="text-sm text-slate">
-                  {listening
-                    ? "Speak naturally and stop recording when you finish."
-                    : "Answer by voice, submit, then continue to the next question."}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-center lg:justify-end">
-              {pendingAdvance ? (
-                <button type="button" className="button-primary min-w-[220px]" onClick={handleContinue}>
-                  {interview.turns.length >= interview.targetQuestionCount ? "See results" : "Next question"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="button-primary min-w-[220px]"
-                  onClick={() => {
-                    void handleSubmitAnswer();
-                  }}
-                  disabled={listening || !draftAnswer.trim() || evaluating}
-                >
-                  {evaluating ? "Evaluating..." : "Submit answer"}
-                </button>
+            <h2
+              key={currentQuestion.id}
+              className={cn(
+                "animate-step-in mt-6 font-semibold leading-[1.4] text-ink",
+                currentQuestion.prompt.length > 120
+                  ? "text-xl sm:text-2xl"
+                  : currentQuestion.prompt.length > 70
+                    ? "text-2xl sm:text-3xl"
+                    : "text-3xl sm:text-4xl",
               )}
-            </div>
+            >
+              {currentQuestion.prompt}
+            </h2>
+
+            <p className="mt-4 min-h-[1.5rem] text-sm leading-6 text-ink/65">
+              {pendingAdvance ? "\u00A0" : currentQuestion.focus}
+            </p>
           </div>
+        </section>
+
+        {/* Response area */}
+        <div className="mt-10 flex flex-col items-center gap-4">
+          {/* Single circular action button — same shape in all states */}
+          <button
+            type="button"
+            onClick={() => {
+              if (pendingAdvance) {
+                handleContinue();
+              } else {
+                void handleSpeakToggle();
+              }
+            }}
+            disabled={evaluating || (!pendingAdvance && (!sttSupported || speaking))}
+            className={cn(
+              "relative flex h-20 w-20 items-center justify-center rounded-full text-sm font-semibold text-white transition-all duration-200 disabled:opacity-40",
+              evaluating
+                ? "bg-ink/40 cursor-not-allowed"
+                : listening
+                  ? "animate-recording-pulse bg-red-500"
+                  : pendingAdvance
+                    ? "animate-fade-in bg-ink hover:scale-105 active:scale-95"
+                    : "bg-ink hover:scale-105 active:scale-95",
+            )}
+          >
+            {evaluating ? (
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            ) : listening ? (
+              "Stop"
+            ) : pendingAdvance ? (
+              interview.turns.length >= interview.targetQuestionCount ? "Done" : "Next"
+            ) : (
+              "Speak"
+            )}
+          </button>
+
+          {/* Status hint */}
+          <p className="text-sm text-slate">
+            {evaluating
+              ? "Thinking…"
+              : speaking
+                ? "Coach is speaking…"
+                : listening
+                  ? "Tap Stop when you're done"
+                  : pendingAdvance
+                    ? "Tap Next to continue"
+                    : "Tap Speak when ready"}
+          </p>
+
+          {/* Errors */}
+          {error ? (
+            <p className="text-sm text-red-600">{error}</p>
+          ) : null}
         </div>
       </div>
     </main>

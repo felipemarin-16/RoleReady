@@ -18,9 +18,19 @@ function inferSeniority(roleTitle: string, rawJobText: string) {
   return "mid-level";
 }
 
+function cleanProjectEntry(entry: string) {
+  // Strip trailing date patterns: "2026(Present)", "(2024-Present)", "2024 - Present", "(2023)"
+  return entry
+    .replace(/\s*\d{4}\s*\(Present\)\s*$/i, "")
+    .replace(/\s*[\(\[]\d{4}\s*[-–]\s*(Present|\d{4})[\)\]]\s*$/i, "")
+    .replace(/\s*\d{4}\s*[-–]\s*(Present|\d{4})\s*$/i, "")
+    .replace(/\s*[\(\[]\d{4}[\)\]]\s*$/i, "")
+    .trim();
+}
+
 function buildResumeProjectSummary(resume: ResumeData) {
   const experienceHighlights = resume.experience.slice(0, 3).join(" | ");
-  const projectHighlights = resume.projects.slice(0, 2).join(" | ");
+  const projectHighlights = resume.projects.slice(0, 2).map(cleanProjectEntry).join(" | ");
   const skills = resume.skills.slice(0, 8).join(", ");
 
   return [
@@ -33,12 +43,14 @@ function buildResumeProjectSummary(resume: ResumeData) {
     .join(" ");
 }
 
-export function buildInterviewContext(resume: ResumeData, job: JobData) {
+export function buildInterviewContext(resume: ResumeData, job: JobData, candidateName: string) {
   return {
+    candidateName: candidateName.trim() || resume.name,
     role: job.roleTitle || "Target Role",
+    companyName: job.companyName || "the company",
+    jobType: job.jobType || "Full-time",
     seniority: inferSeniority(job.roleTitle, job.rawText),
     interviewType: "mixed behavioral and role-fit",
     resumeProjectSummary: buildResumeProjectSummary(resume),
   };
 }
-

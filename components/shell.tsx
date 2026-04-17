@@ -1,18 +1,22 @@
 import type { ReactNode } from "react";
 
+import { SiteHeader } from "@/components/site-header";
+
 type ShellProps = {
   badge: string;
   title: string;
   subtitle: string;
   children: ReactNode;
   aside?: ReactNode;
+  current?: "home" | "interview" | "results";
 };
 
-export function Shell({ badge, title, subtitle, children, aside }: ShellProps) {
+export function Shell({ badge, title, subtitle, children, aside, current = "home" }: ShellProps) {
   const hasAside = Boolean(aside);
 
   return (
     <main className="relative mx-auto flex min-h-screen max-w-7xl flex-col gap-8 px-4 py-8 sm:px-6 lg:px-10">
+      <SiteHeader current={current} />
       <section className={hasAside ? "grid gap-8 lg:grid-cols-[1.2fr_0.8fr]" : "grid gap-8"}>
         <div className="space-y-6">
           <div className="space-y-4">

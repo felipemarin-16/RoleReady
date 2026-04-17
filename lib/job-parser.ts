@@ -59,6 +59,14 @@ function findCompanyName(text: string) {
   return atCompany?.[1]?.trim() ?? "the company";
 }
 
+function findJobType(text: string) {
+  if (/\bintern(ship)?\b/i.test(text)) return "Internship";
+  if (/\bpart[\s-]?time\b/i.test(text)) return "Part-time";
+  if (/\bcontract(or)?\b/i.test(text)) return "Contract";
+  if (/\bfreelance\b/i.test(text)) return "Freelance";
+  return "Full-time";
+}
+
 function findSkills(text: string) {
   const lower = text.toLowerCase();
   return COMMON_SKILLS.filter((skill) => lower.includes(skill.toLowerCase()));
@@ -135,6 +143,7 @@ export function parseJobPosting(rawText: string): JobData {
     rawText: normalized,
     roleTitle: toTitleCase(findRoleTitle(lines)),
     companyName: findCompanyName(normalized),
+    jobType: findJobType(normalized),
     requiredSkills,
     preferredSkills,
     responsibilities: responsibilities.length ? responsibilities : fallbackResponsibilities,

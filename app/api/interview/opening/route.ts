@@ -6,6 +6,7 @@ export const runtime = "nodejs";
 
 type OpeningRequest = {
   state?: {
+    candidateName?: string;
     role?: string;
     seniority?: string;
     interviewType?: string;
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
   }
 
   const opening = await generateOpeningQuestion({
+    candidateName: state.candidateName || "",
     role: state.role,
     seniority: state.seniority || "mid-level",
     interviewType: state.interviewType || "mixed behavioral and role-fit",
@@ -56,4 +58,3 @@ export async function POST(request: Request) {
     },
   });
 }
-

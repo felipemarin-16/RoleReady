@@ -19,6 +19,7 @@ export type JobData = {
   rawText: string;
   roleTitle: string;
   companyName: string;
+  jobType: string;
   requiredSkills: string[];
   preferredSkills: string[];
   responsibilities: string[];
@@ -78,7 +79,10 @@ export type InterviewModelEvaluation = {
 };
 
 export type InterviewContext = {
+  candidateName: string;
   role: string;
+  companyName: string;
+  jobType: string;
   seniority: string;
   interviewType: string;
   resumeProjectSummary: string;

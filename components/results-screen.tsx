@@ -48,6 +48,7 @@ export function ResultsScreen() {
         badge="Results"
         title="Your interview results will appear here."
         subtitle="Complete a session first so RoleReady can generate the score, feedback, and cover letter."
+        current="results"
       >
         <div className="panel p-6">
           <button type="button" className="button-primary" onClick={() => router.push("/")}>
@@ -63,6 +64,7 @@ export function ResultsScreen() {
       badge="Results"
       title="A concise report you can use right away."
       subtitle="RoleReady summarizes where the interview landed, what to sharpen, and how to present your story more convincingly for the role."
+      current="results"
       aside={
         <>
           <div className="panel p-6">

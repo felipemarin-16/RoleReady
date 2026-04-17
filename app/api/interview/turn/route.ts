@@ -6,7 +6,9 @@ export const runtime = "nodejs";
 
 type TurnRequest = {
   state?: {
+    candidateName?: string;
     role?: string;
+    companyName?: string;
     seniority?: string;
     interviewType?: string;
     resumeProjectSummary?: string;
@@ -40,7 +42,9 @@ export async function POST(request: Request) {
   }
 
   const evaluation = await evaluateInterviewTurn({
+    candidateName: state.candidateName || "",
     role: state.role,
+    companyName: state.companyName || "",
     seniority: state.seniority || "mid-level",
     interviewType: state.interviewType || "mixed behavioral and role-fit",
     resumeProjectSummary: state.resumeProjectSummary,
@@ -60,4 +64,3 @@ export async function POST(request: Request) {
     },
   });
 }
-

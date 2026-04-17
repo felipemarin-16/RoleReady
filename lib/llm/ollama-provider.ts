@@ -39,9 +39,11 @@ export class OllamaProvider implements LlmProvider {
           model: this.model,
           stream: false,
           format: "json",
+          think: false,
           options: {
             temperature: 0.35,
             top_p: 0.9,
+            num_predict: 400,
           },
           messages: [
             { role: "system", content: systemPrompt } satisfies OllamaMessage,
@@ -58,11 +60,14 @@ export class OllamaProvider implements LlmProvider {
       }
 
       const payload = (await response.json()) as OllamaChatResponse;
-      const content = payload.message?.content?.trim();
+      const raw = payload.message?.content?.trim();
 
-      if (!content) {
+      if (!raw) {
         throw new Error("Ollama response did not contain message content.");
       }
+
+      // Strip <think>...</think> reasoning blocks emitted by Qwen3 models
+      const content = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 
       return extractJsonObject(content) as T;
     } catch (error) {

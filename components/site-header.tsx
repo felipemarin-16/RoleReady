@@ -14,11 +14,11 @@ const LINKS = [
 
 export function SiteHeader({ current = "home" }: SiteHeaderProps) {
   return (
-    <header className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-      <Link href="/" className="font-display text-3xl font-semibold text-ink transition hover:text-pine">
+    <header className="flex items-center justify-between gap-4 py-4">
+      <Link href="/" className="shrink-0 font-display text-2xl font-semibold text-ink transition hover:text-pine sm:text-3xl">
         RoleReady
       </Link>
-      <nav className="flex items-center justify-center gap-6 text-sm font-semibold sm:gap-10">
+      <nav className="ml-auto flex items-center justify-end gap-5 text-sm font-semibold sm:gap-8">
         {LINKS.map((link) => {
           const active = current === "home" && link.key === "home";
 
