@@ -49,7 +49,7 @@ type InterviewStage =
 type AnswerReviewPayload = Pick<InterviewModelEvaluation, "evaluation" | "strengths" | "gaps">;
 type NextQuestionPayload = Pick<
   InterviewModelEvaluation,
-  "follow_up_question" | "why_this_follow_up" | "next_skill_to_probe"
+  "follow_up_question" | "coach_tip" | "why_this_follow_up" | "next_skill_to_probe"
 >;
 
 function inferStage(previousQuestionsCount: number): InterviewStage {
@@ -204,18 +204,23 @@ function stageFallbackQuestion(stage: InterviewStage, state: InterviewBrainState
 // Stage-aware system prompt for the next interview question.
 function buildStageSystemPrompt(stage: InterviewStage): string {
   const jsonShape =
-    'Return ONLY strict JSON: {"follow_up_question": string, "why_this_follow_up": string, "next_skill_to_probe": string}.';
+    'Return ONLY strict JSON: {"follow_up_question": string, "coach_tip": string, "why_this_follow_up": string, "next_skill_to_probe": string}.';
   const interviewerRule =
     "Speak like a real interviewer talking to a candidate in a live interview. " +
     "Ask one concise, natural, conversational interview question. " +
     "Do NOT ask analytical or meta questions like 'what do you understand' or 'what are the most relevant aspects'. " +
     "Do NOT use placeholders.";
+  const coachTipRule =
+    "coach_tip must be a short candidate-facing tip for answering THIS exact question well. " +
+    "It should explain the answer approach or what to emphasize, not leak internal reasoning and not reduce the advice to naming one technology unless the question is specifically about that technology. " +
+    "Write it like a helpful interview coach, in one sentence.";
 
   switch (stage) {
     case "motivation":
       return (
         `You are a professional interviewer. ${jsonShape} ` +
         `${interviewerRule} ` +
+        `${coachTipRule} ` +
         "follow_up_question must be a MOTIVATION question. " +
         "Use the company and role fields from the context — do NOT use placeholders like [Company Name]. " +
         "Ask why the candidate wants this specific role. " +
@@ -226,6 +231,7 @@ function buildStageSystemPrompt(stage: InterviewStage): string {
       return (
         `You are a professional interviewer. ${jsonShape} ` +
         `${interviewerRule} ` +
+        `${coachTipRule} ` +
         "follow_up_question must ask for a simple overview of the candidate's background. " +
         "Do not turn it into an analysis prompt. One concise direct sentence."
       );
@@ -234,6 +240,7 @@ function buildStageSystemPrompt(stage: InterviewStage): string {
       return (
         `You are a professional interviewer. ${jsonShape} ` +
         `${interviewerRule} ` +
+        `${coachTipRule} ` +
         "follow_up_question must choose ONE specific project or technical example from the resume and ask for a deep walkthrough. " +
         "Use resume_highlights to choose the best project. Ask about it in a natural way. " +
         "Do NOT use generic fit wording."
@@ -243,6 +250,7 @@ function buildStageSystemPrompt(stage: InterviewStage): string {
       return (
         `You are a professional interviewer. ${jsonShape} ` +
         `${interviewerRule} ` +
+        `${coachTipRule} ` +
         "The candidate just described a project. follow_up_question must ask one focused follow-up on that same project. " +
         "Probe missing depth such as challenge, ownership boundary, decision-making, metrics, or implementation details. " +
         "Do NOT switch to a new topic."
@@ -252,6 +260,7 @@ function buildStageSystemPrompt(stage: InterviewStage): string {
       return (
         `You are a professional interviewer. ${jsonShape} ` +
         `${interviewerRule} ` +
+        `${coachTipRule} ` +
         "follow_up_question must ask about tradeoffs, technical decisions, collaboration, metrics, stakeholder communication, or outcomes. " +
         "Keep it tied to the project or experience already under discussion."
       );
@@ -260,6 +269,7 @@ function buildStageSystemPrompt(stage: InterviewStage): string {
       return (
         `You are a professional interviewer. ${jsonShape} ` +
         `${interviewerRule} ` +
+        `${coachTipRule} ` +
         "follow_up_question must be a role-specific or behavioral question tied to the actual job. " +
         'If behavioral, it may start with "Tell me about a time when". ' +
         "Use uncovered required skills, responsibilities, or working style expectations from the posting. " +
@@ -270,9 +280,39 @@ function buildStageSystemPrompt(stage: InterviewStage): string {
       return (
         `You are a professional interviewer. ${jsonShape} ` +
         `${interviewerRule} ` +
+        `${coachTipRule} ` +
         "follow_up_question should invite the candidate to make their strongest final case or " +
         "reflect on the conversation. Keep it brief and warm."
       );
+  }
+}
+
+async function generateCoachTip(
+  provider: ReturnType<typeof getLlmProvider>,
+  question: string,
+  stage: InterviewStage,
+  state: InterviewBrainState,
+) {
+  try {
+    const output = await provider.generateJson<{ coach_tip?: string }>({
+      systemPrompt:
+        'Return ONLY strict JSON: {"coach_tip": string}. ' +
+        "You are a supportive interview coach. Write one short, natural tip that helps the candidate answer the exact interview question well. " +
+        "Focus on what to emphasize or how to structure the answer for this specific question. " +
+        "Do NOT leak internal reasoning, and do NOT reduce the tip to naming a random skill or technology unless the question is directly about it.",
+      userPrompt: JSON.stringify({
+        stage,
+        role: state.role,
+        company: normalizedCompanyReference(state.companyName) || "",
+        question,
+        resume_highlights: (state.resumeHighlights || []).slice(0, 3),
+        required_skills: state.requiredSkills.slice(0, 5),
+      }),
+    });
+
+    return sanitizeText(output.coach_tip, "");
+  } catch {
+    return "";
   }
 }
 
@@ -377,9 +417,12 @@ async function polishQuestion(
 export async function generateOpeningQuestion(state: InterviewBrainState) {
   const provider = getLlmProvider();
   const baseQuestion = "Tell me about yourself.";
+  const question = await polishQuestion(provider, baseQuestion, "motivation", state);
+  const coachTip = await generateCoachTip(provider, question, "motivation", state);
 
   return {
-    question: await polishQuestion(provider, baseQuestion, "motivation", state),
+    question,
+    coach_tip: coachTip,
     whyThisQuestion:
       "Starts with a natural warm-up so the candidate can frame their story before the interview narrows into role fit and project depth.",
     nextSkillToProbe:
@@ -479,6 +522,7 @@ export async function evaluateInterviewTurn(
 
   const defaultQuestionPlan: NextQuestionPayload = {
     follow_up_question: stageFallbackQuestion(stage, state),
+    coach_tip: "",
     why_this_follow_up: `Moves the interview into the ${stage} stage.`,
     next_skill_to_probe: skill,
   };
@@ -509,6 +553,10 @@ export async function evaluateInterviewTurn(
         ? ensureQuestionQuality(rawFollowUp, stage, state)
         : stageFallbackQuestion(stage, state);
     const followUpQuestion = await polishQuestion(provider, candidateQuestion, stage, state);
+    const coachTip = sanitizeText(
+      questionOutput.coach_tip,
+      await generateCoachTip(provider, followUpQuestion, stage, state),
+    );
 
     const strengths = sanitizeList(answerReviewOutput.strengths);
     const gaps = sanitizeList(answerReviewOutput.gaps);
@@ -522,6 +570,7 @@ export async function evaluateInterviewTurn(
       strengths: strengths.length ? strengths : defaultAnswerReview.strengths,
       gaps: gaps.length ? gaps : defaultAnswerReview.gaps,
       follow_up_question: followUpQuestion,
+      coach_tip: coachTip,
       why_this_follow_up: sanitizeText(
         questionOutput.why_this_follow_up,
         defaultQuestionPlan.why_this_follow_up,

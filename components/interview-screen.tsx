@@ -446,7 +446,7 @@ export function InterviewScreen() {
       id: `q${nextIndex + 1}`,
       category: "adaptive" as const,
       prompt: nextQuestionPrompt,
-      focus: "",
+      focus: interview.pendingNextTip?.trim() || "",
       targetSkills: nextSkill ? [nextSkill] : [],
     };
 
@@ -455,9 +455,10 @@ export function InterviewScreen() {
       currentQuestionIndex: nextIndex,
       currentQuestion: {
         ...nextQuestion,
-        focus: buildQuestionTip(nextQuestion),
+        focus: nextQuestion.focus || buildQuestionTip(nextQuestion),
       },
       pendingNextQuestion: undefined,
+      pendingNextTip: undefined,
       pendingNextSkill: undefined,
       pendingFollowUpReason: undefined,
     });
@@ -487,6 +488,7 @@ export function InterviewScreen() {
       turns: nextTurns,
       coveredSkills: nextCoveredSkills,
       pendingNextQuestion: modelResponse.follow_up_question,
+      pendingNextTip: modelResponse.coach_tip,
       pendingNextSkill: modelResponse.next_skill_to_probe,
       pendingFollowUpReason: modelResponse.why_this_follow_up,
       completedAt: completed ? new Date().toISOString() : interview.completedAt,

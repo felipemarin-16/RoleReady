@@ -80,6 +80,7 @@ export type InterviewModelEvaluation = {
   strengths: string[];
   gaps: string[];
   follow_up_question: string;
+  coach_tip?: string;
   why_this_follow_up: string;
   next_skill_to_probe: string;
 };
@@ -116,6 +117,7 @@ export type InterviewSession = {
   currentQuestion: InterviewQuestion;
   coveredSkills: string[];
   pendingNextQuestion?: string;
+  pendingNextTip?: string;
   pendingNextSkill?: string;
   pendingFollowUpReason?: string;
   turns: InterviewTurn[];

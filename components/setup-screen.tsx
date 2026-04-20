@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 
 import { SiteHeader } from "@/components/site-header";
 import { buildInterviewContext } from "@/lib/interview-context";
-import { buildQuestionTip } from "@/lib/interview-engine";
 import { parseJobPosting } from "@/lib/job-parser";
 import { extractTextFromPdf } from "@/lib/pdf";
 import { saveInterviewSession, saveSetupSession } from "@/lib/session";
@@ -210,6 +209,7 @@ export function SetupScreen() {
 
     const openingPayload = (await openingResponse.json()) as {
       question: string;
+      coach_tip?: string;
       whyThisQuestion?: string;
       nextSkillToProbe?: string;
     };
@@ -218,13 +218,9 @@ export function SetupScreen() {
     const openingQuestion =
       openingPayload.question?.trim() ||
       `To start, walk me through the experience, project, or technical work in your background that best matches the ${job.roleTitle || "role"} role.`;
-    const openingFocus = buildQuestionTip({
-      id: "q1",
-      category: "adaptive",
-      prompt: openingQuestion,
-      focus: "",
-      targetSkills: [openingSkill].filter(Boolean),
-    });
+    const openingFocus =
+      openingPayload.coach_tip?.trim() ||
+      "Open with the background most relevant to this role, then connect it to why you are here.";
 
     console.groupCollapsed("RoleReady setup debug");
     console.info("Parsed resume", resume);
